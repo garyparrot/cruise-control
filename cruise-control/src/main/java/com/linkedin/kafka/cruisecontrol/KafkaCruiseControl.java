@@ -602,6 +602,7 @@ public class KafkaCruiseControl {
                                                     Map<TopicPartition, List<ReplicaPlacementInfo>> initReplicaDistribution,
                                                     OptimizationOptions optimizationOptions)
       throws KafkaCruiseControlException {
+    LOG.info("Goals: " + goalsByPriority);
     return _goalOptimizer.optimizations(clusterModel, goalsByPriority, operationProgress, initReplicaDistribution, optimizationOptions);
   }
 

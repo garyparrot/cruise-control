@@ -91,6 +91,8 @@ final class OptimizationVerifier {
     return executeGoalsFor(constraint, clusterModel, goalNameByPriority, excludedTopics, verifications, false);
   }
 
+  public static OptimizerResult result;
+
   /**
    * Execute given goals in the given cluster enforcing the given constraint. Return pass / fail status of a test.
    * A test fails if:
@@ -167,13 +169,18 @@ final class OptimizationVerifier {
       resultOfSecondPass = goalsOfSecondPass.isEmpty() ? null
                                                        : goalOptimizer.optimizations(clusterModel, goalByPriority, new OperationProgress());
     }
-    if (LOG.isTraceEnabled()) {
-      LOG.trace("Took {} ms to execute {} to generate {} proposals.", System.currentTimeMillis() - startTime,
-                goalByPriority,
-                (resultOfFirstPass == null ? 0 : resultOfFirstPass.goalProposals().size())
-                + (resultOfSecondPass == null ? 0 : resultOfSecondPass.goalProposals().size()));
-    }
+    LOG.error("Took {} ms to execute {} to generate {} proposals.", System.currentTimeMillis() - startTime,
+              goalByPriority,
+              (resultOfFirstPass == null ? 0 : resultOfFirstPass.goalProposals().size())
+              + (resultOfSecondPass == null ? 0 : resultOfSecondPass.goalProposals().size()));
 
+    // System.out.println("Summary");
+    // System.out.println(resultOfFirstPass.getProposalSummary());
+    // System.out.println("BEFORE");
+    // System.out.println(resultOfFirstPass.brokerStatsBeforeOptimization());
+    // System.out.println("AFTER");
+    // System.out.println(resultOfFirstPass.brokerStatsAfterOptimization());
+    OptimizationVerifier.result = resultOfFirstPass;
     for (Verification verification : verifications) {
       switch (verification) {
         case GOAL_VIOLATION:

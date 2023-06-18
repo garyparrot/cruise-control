@@ -32,7 +32,7 @@ public class BrokerStats extends AbstractCruiseControlResponse {
   protected static final String HOSTS = "hosts";
   @JsonResponseField
   protected static final String BROKERS = "brokers";
-  protected final List<SingleBrokerStats> _brokerStats;
+  public final List<SingleBrokerStats> _brokerStats;
   protected final SortedMap<String, SingleHostStats> _hostStats;
   protected int _hostFieldLength;
   protected int _rackFieldLength;

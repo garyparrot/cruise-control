@@ -136,7 +136,7 @@ public final class RandomCluster {
         || properties.get(ClusterProperty.MEAN_CPU).doubleValue() < 0
         || properties.get(ClusterProperty.NUM_TOPICS).intValue() <= 0
         || properties.get(ClusterProperty.MIN_REPLICATION).intValue() > properties.get(ClusterProperty.MAX_REPLICATION).intValue()
-        || (leaderInFirstPosition && properties.get(ClusterProperty.MIN_REPLICATION).intValue() < 2)
+        || (leaderInFirstPosition && properties.get(ClusterProperty.MIN_REPLICATION).intValue() < 1)
         || properties.get(ClusterProperty.MAX_REPLICATION).intValue() > numBrokers
         || properties.get(ClusterProperty.NUM_TOPICS).intValue() > properties.get(ClusterProperty.NUM_REPLICAS).intValue()
         || (properties.get(ClusterProperty.MIN_REPLICATION).intValue() == properties.get(ClusterProperty.MAX_REPLICATION).intValue()

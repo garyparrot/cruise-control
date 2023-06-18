@@ -100,25 +100,9 @@ public class RandomClusterTest {
     Collection<Object[]> p = new ArrayList<>();
 
     // Sorted by priority.
-    List<String> goalNameByPriority = Arrays.asList(BrokerSetAwareGoal.class.getName(),
-                                                    RackAwareGoal.class.getName(),
-                                                    RackAwareDistributionGoal.class.getName(),
-                                                    MinTopicLeadersPerBrokerGoal.class.getName(),
-                                                    ReplicaCapacityGoal.class.getName(),
-                                                    DiskCapacityGoal.class.getName(),
-                                                    NetworkInboundCapacityGoal.class.getName(),
-                                                    NetworkOutboundCapacityGoal.class.getName(),
-                                                    CpuCapacityGoal.class.getName(),
-                                                    ReplicaDistributionGoal.class.getName(),
-                                                    PotentialNwOutGoal.class.getName(),
-                                                    DiskUsageDistributionGoal.class.getName(),
+    List<String> goalNameByPriority = Arrays.asList(ReplicaDistributionGoal.class.getName(),
                                                     NetworkInboundUsageDistributionGoal.class.getName(),
-                                                    NetworkOutboundUsageDistributionGoal.class.getName(),
-                                                    CpuUsageDistributionGoal.class.getName(),
-                                                    LeaderReplicaDistributionGoal.class.getName(),
-                                                    LeaderBytesInDistributionGoal.class.getName(),
-                                                    TopicReplicaDistributionGoal.class.getName(),
-                                                    PreferredLeaderElectionGoal.class.getName());
+                                                    NetworkOutboundUsageDistributionGoal.class.getName());
 
     List<String> kafkaAssignerGoals = Arrays.asList(KafkaAssignerEvenRackAwareGoal.class.getName(),
                                                     KafkaAssignerDiskUsageDistributionGoal.class.getName());
@@ -183,7 +167,7 @@ public class RandomClusterTest {
     Map<ClusterProperty, Number> clusterProperties = new HashMap<>(TestConstants.BASE_PROPERTIES);
     clusterProperties.putAll(_modifiedProperties);
 
-    LOG.debug("Replica distribution: {}.", _replicaDistribution);
+    LOG.error("Replica distribution: {}.", _replicaDistribution);
     ClusterModel clusterModel = RandomCluster.generate(clusterProperties);
     RandomCluster.populate(clusterModel, clusterProperties, _replicaDistribution);
 
