@@ -40,17 +40,17 @@ public class ThesisTest {
 
   @Test
   public void testDoThis() throws Exception {
-    for(int i = 0; i < 10000; i++) {
-      ClusterModel clusterModel = rebalance();
+    for(int i = 0; i < 100; i++) {
+      ClusterModel clusterModel = rebalance(i);
     }
   }
 
-  private ClusterModel rebalance() throws Exception {
+  private ClusterModel rebalance(int seed) throws Exception {
     // Sorted by priority.
     List<String> goalNameByPriority = Arrays.asList(
-        //  ReplicaDistributionGoal.class.getName(),
-        NetworkOutboundUsageDistributionGoal.class.getName(),
-        NetworkInboundUsageDistributionGoal.class.getName()
+        // ReplicaDistributionGoal.class.getName(),
+        NetworkInboundUsageDistributionGoal.class.getName(),
+        NetworkOutboundUsageDistributionGoal.class.getName()
     );
 
     List<String> kafkaAssignerGoals = Arrays.asList(KafkaAssignerEvenRackAwareGoal.class.getName(),
@@ -75,14 +75,23 @@ public class ThesisTest {
     props.setProperty(AnalyzerConfig.MAX_REPLICAS_PER_BROKER_CONFIG, Long.toString(3000L));
     balancingConstraint = new BalancingConstraint(new KafkaCruiseControlConfig(props));
     // balancingConstraint.setResourceBalancePercentage(TestConstants.LOW_BALANCE_PERCENTAGE);
-    balancingConstraint.setResourceBalancePercentage(1.001);
+    balancingConstraint.setResourceBalancePercentage(1.00001);
     balancingConstraint.setCapacityThreshold(TestConstants.MEDIUM_CAPACITY_THRESHOLD);
 
     // ClusterModel clusterModel = RandomCluster.generate(clusterProperties);
     // RandomCluster.populate(clusterModel, clusterProperties, TestConstants.Distribution.LINEAR);
-    ClusterModel clusterModel = createModel(BalancingProblemGenerator.generate(1000, new Random()));
+    ClusterModel clusterModel = createModel(BalancingProblemGenerator.generate(300, new Random(seed)));
     Assertions.assertTrue(OptimizationVerifier.executeGoalsFor(balancingConstraint, clusterModel, goalNameByPriority, verifications), "Random Cluster Test failed to improve the existing state.");
 
+    var beforeNetOutSummary = OptimizationVerifier.result.brokerStatsBeforeOptimization()._brokerStats.stream()
+        .map(x -> x.getJsonStructure().get("NwOutRate"))
+        .mapToDouble(x -> (double) x)
+        .summaryStatistics();
+    var beforeNetInSummary = OptimizationVerifier.result.brokerStatsBeforeOptimization()._brokerStats.stream()
+        .mapToDouble(x ->
+            (double) x.getJsonStructure().get("LeaderNwInRate") +
+                (double) x.getJsonStructure().get("FollowerNwInRate"))
+        .summaryStatistics();
     var netInSummary = OptimizationVerifier.result.brokerStatsAfterOptimization()._brokerStats.stream()
         .mapToDouble(x ->
             (double) x.getJsonStructure().get("LeaderNwInRate") +
@@ -93,10 +102,13 @@ public class ThesisTest {
         .mapToDouble(x -> (double) x)
         .summaryStatistics();
 
-    System.out.println(netInSummary.getMin() + "," + netInSummary.getMax() + " = " +
-        (netInSummary.getMax() - netInSummary.getMin()));
-    System.out.println(netOutSummary.getMin() + "," + netOutSummary.getMax() + " = " +
-        (netOutSummary.getMax() - netOutSummary.getMin()));
+    long bin = (long)(beforeNetInSummary.getMax() - beforeNetInSummary.getMin()) * 1000;
+    long bout = (long)(beforeNetOutSummary.getMax() - beforeNetOutSummary.getMin()) * 1000;
+    long in = (long)(netInSummary.getMax() - netInSummary.getMin()) * 1000;
+    long out = (long)(netOutSummary.getMax() - netOutSummary.getMin()) * 1000;
+
+    System.out.println(bin + " " + bout);
+    System.out.println(in + " " + out);
 
     return clusterModel;
   }

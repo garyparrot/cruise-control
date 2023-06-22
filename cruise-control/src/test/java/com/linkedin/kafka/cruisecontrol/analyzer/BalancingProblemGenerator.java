@@ -2,6 +2,7 @@ package com.linkedin.kafka.cruisecontrol.analyzer;
 
 import org.apache.commons.math3.distribution.EnumeratedDistribution;
 import org.apache.commons.math3.distribution.UniformIntegerDistribution;
+import org.apache.commons.math3.distribution.ZipfDistribution;
 import org.apache.commons.math3.random.Well19937c;
 import org.apache.commons.math3.util.Pair;
 
@@ -17,22 +18,26 @@ import java.util.stream.Stream;
 public class BalancingProblemGenerator {
 
   public static void main(String[] args) {
-    BalancingProblem generate = generate(100, new Random());
+    // BalancingProblem generate = generate(100, new Random());
+    ZipfDistribution zipfDistribution = new ZipfDistribution(12, 1.5);
+    for(int i =0 ; i < 20; i++)
+      System.out.println(i + ": " + (zipfDistribution.cumulativeProbability(i + 1) - zipfDistribution.cumulativeProbability(i)));
     System.out.println("YES");
   }
 
   public static BalancingProblem generate(int topicCount, Random random) {
-    var normalRate = new UniformIntegerDistribution(new Well19937c(random.nextInt()), 1_000, 30_000);
-    var backboneRate = new UniformIntegerDistribution(new Well19937c(random.nextInt()), 100_000, 500_000);
-    var manyConsumerRate = new UniformIntegerDistribution(new Well19937c(random.nextInt()), 1_000, 10_000);
+    var normalRate = new UniformIntegerDistribution(new Well19937c(random.nextInt()), 4_000, 5_000);
+    var backboneRate = new UniformIntegerDistribution(new Well19937c(random.nextInt()), 90_000, 100_000);
+    var manyConsumerRate = new UniformIntegerDistribution(new Well19937c(random.nextInt()), 800, 1_000);
+    var fixedPartitions = 10;
     var topicStyle = new EnumeratedDistribution<>(new Well19937c(random.nextInt()), List.of(
-        Pair.create("Normal", 0.7),
-        Pair.create("Backbone", 0.1),
-        Pair.create("ManyConsumer", 0.2)));
+        Pair.create("Normal", 0.6),
+        Pair.create("Backbone", 0.15),
+        Pair.create("ManyConsumer", 0.25)));
     var writeStyle = new EnumeratedDistribution<>(new Well19937c(random.nextInt()), List.of(
-        Pair.create("Even", 0.1),
-        Pair.create("NotSoEven", 0.4),
-        Pair.create("NotEven", 0.8)));
+        Pair.create("Even", 0.3),
+        Pair.create("NotSoEven", 0.5),
+        Pair.create("NotEven", 0.2)));
     var brokerIds = IntStream.range(0, 3 + random.nextInt(12))
         .boxed()
         .collect(Collectors.toList());
@@ -43,7 +48,7 @@ public class BalancingProblemGenerator {
     var partitions = topics.stream()
         .collect(Collectors.toUnmodifiableMap(
             t -> t,
-            t -> 10));
+            t -> fixedPartitions));
     var topicNetIn = topics.stream()
         .collect(Collectors.toUnmodifiableMap(
             t -> t,
@@ -68,9 +73,11 @@ public class BalancingProblemGenerator {
                     if(s.equals("Even"))
                       return 1.0;
                     else if(s.equals("NotSoEven"))
-                      return 100.0 + random.nextInt(0, 10);
-                    else if(s.equals("NotEven"))
-                      return Math.pow(1.2, p);
+                      return 50.0 + random.nextInt(-10, 10);
+                    else if(s.equals("NotEven")) {
+                      var zipf = new ZipfDistribution(partitions.get(topic), 1.0);
+                      return zipf.cumulativeProbability(p + 1) - zipf.cumulativeProbability(p);
+                    }
                     else
                       throw new IllegalArgumentException();
                   }));
@@ -95,7 +102,7 @@ public class BalancingProblemGenerator {
           var rate = e.getValue();
           var baseRandom = new Random(tp.split("-")[0].hashCode());
           var fanout = tp.startsWith("ManyConsumer") ?
-              baseRandom.nextInt(3, 6) :
+              baseRandom.nextInt(4, 6) :
               baseRandom.nextInt(1, 3);
 
           return Map.entry((String) tp, (Long) (rate * fanout));
@@ -107,7 +114,12 @@ public class BalancingProblemGenerator {
     var replicas = topics.stream()
         .collect(Collectors.toUnmodifiableMap(
             x -> x,
-            x -> (short) 1));
+            x -> {
+              if(x.startsWith("Backbone"))
+                return (short) 1;
+              else
+                return (short) 2;
+            }));
 
     var brokers = Stream.generate(() -> brokerIds)
         .flatMap(Collection::stream)
