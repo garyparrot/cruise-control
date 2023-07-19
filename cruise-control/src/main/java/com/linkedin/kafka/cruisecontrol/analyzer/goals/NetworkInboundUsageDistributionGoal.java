@@ -12,6 +12,8 @@ import com.linkedin.kafka.cruisecontrol.analyzer.BalancingAction;
 import com.linkedin.kafka.cruisecontrol.analyzer.ActionType;
 import com.linkedin.kafka.cruisecontrol.model.ClusterModel;
 
+import java.util.concurrent.atomic.LongAdder;
+
 import static com.linkedin.kafka.cruisecontrol.analyzer.ActionAcceptance.ACCEPT;
 
 
@@ -39,7 +41,15 @@ public class NetworkInboundUsageDistributionGoal extends ResourceDistributionGoa
   @Override
   public ActionAcceptance actionAcceptance(BalancingAction action, ClusterModel clusterModel) {
     // Leadership movement won't cause inbound network utilization change.
-    return action.balancingAction() == ActionType.LEADERSHIP_MOVEMENT ? ACCEPT : super.actionAcceptance(action, clusterModel);
+    var a = action.balancingAction() == ActionType.LEADERSHIP_MOVEMENT ? ACCEPT : super.actionAcceptance(action, clusterModel);
+    if(a != ACCEPT)
+      rejectionCount.increment();
+    else
+      acceptCount.increment();
+    return a;
   }
+
+  public static final LongAdder acceptCount = new LongAdder();
+  public static final LongAdder rejectionCount = new LongAdder();
 
 }

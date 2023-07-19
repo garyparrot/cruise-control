@@ -1057,7 +1057,7 @@ public abstract class ResourceDistributionGoal extends AbstractGoal {
               "Violated %s. [Number of Balanced Brokers] for resource %s. post-optimization:%d pre-optimization:%d "
               + "without improving the standard dev. of utilization. post-optimization:%.2f pre-optimization:%.2f",
               name(), resource(), numBalancedBroker1, numBalancedBroker2, afterUtilizationStd, beforeUtilizationStd);
-          return -1;
+         return -1;
         }
       }
       return 1;

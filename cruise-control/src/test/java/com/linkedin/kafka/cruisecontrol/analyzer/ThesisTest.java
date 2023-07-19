@@ -1,116 +1,131 @@
 package com.linkedin.kafka.cruisecontrol.analyzer;
 
+import com.codahale.metrics.MetricRegistry;
 import com.linkedin.cruisecontrol.monitor.sampling.aggregator.AggregatedMetricValues;
 import com.linkedin.kafka.cruisecontrol.KafkaCruiseControlUnitTestUtils;
+import com.linkedin.kafka.cruisecontrol.analyzer.goals.Goal;
 import com.linkedin.kafka.cruisecontrol.analyzer.goals.NetworkInboundUsageDistributionGoal;
 import com.linkedin.kafka.cruisecontrol.analyzer.goals.NetworkOutboundUsageDistributionGoal;
-import com.linkedin.kafka.cruisecontrol.analyzer.goals.ReplicaDistributionGoal;
-import com.linkedin.kafka.cruisecontrol.analyzer.kafkaassigner.KafkaAssignerDiskUsageDistributionGoal;
-import com.linkedin.kafka.cruisecontrol.analyzer.kafkaassigner.KafkaAssignerEvenRackAwareGoal;
-import com.linkedin.kafka.cruisecontrol.common.ClusterProperty;
+import com.linkedin.kafka.cruisecontrol.async.progress.OperationProgress;
 import com.linkedin.kafka.cruisecontrol.common.Resource;
 import com.linkedin.kafka.cruisecontrol.common.TestConstants;
 import com.linkedin.kafka.cruisecontrol.config.BrokerCapacityInfo;
 import com.linkedin.kafka.cruisecontrol.config.KafkaCruiseControlConfig;
-import com.linkedin.kafka.cruisecontrol.config.ModuloBasedBrokerSetAssignmentPolicy;
 import com.linkedin.kafka.cruisecontrol.config.constants.AnalyzerConfig;
+import com.linkedin.kafka.cruisecontrol.executor.Executor;
 import com.linkedin.kafka.cruisecontrol.model.ClusterModel;
-import com.linkedin.kafka.cruisecontrol.model.RandomCluster;
 import com.linkedin.kafka.cruisecontrol.monitor.ModelGeneration;
+import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.utils.SystemTime;
+import org.easymock.EasyMock;
 import org.junit.Test;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.RepeatedTest;
 
+import java.lang.reflect.Constructor;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Properties;
 import java.util.Random;
-
-import static com.linkedin.kafka.cruisecontrol.analyzer.OptimizationVerifier.Verification.BROKEN_BROKERS;
-import static com.linkedin.kafka.cruisecontrol.analyzer.OptimizationVerifier.Verification.GOAL_VIOLATION;
-import static com.linkedin.kafka.cruisecontrol.analyzer.OptimizationVerifier.Verification.NEW_BROKERS;
-import static com.linkedin.kafka.cruisecontrol.analyzer.OptimizationVerifier.Verification.REGRESSION;
+import java.util.stream.Collectors;
 
 public class ThesisTest {
 
 
   @Test
   public void testDoThis() throws Exception {
-    for(int i = 0; i < 100; i++) {
-      ClusterModel clusterModel = rebalance(i);
+    for(int seed = 0; seed < 100; seed++) {
+      var random = new Random(seed);
+      var clusterModel = createModel(BalancingProblemGenerator.generate(300, random));
+      rebalance(clusterModel);
     }
   }
 
-  private ClusterModel rebalance(int seed) throws Exception {
+  private void rebalance(ClusterModel clusterModel) throws Exception {
     // Sorted by priority.
     List<String> goalNameByPriority = Arrays.asList(
-        // ReplicaDistributionGoal.class.getName(),
         NetworkInboundUsageDistributionGoal.class.getName(),
         NetworkOutboundUsageDistributionGoal.class.getName()
     );
 
-    List<String> kafkaAssignerGoals = Arrays.asList(KafkaAssignerEvenRackAwareGoal.class.getName(),
-        KafkaAssignerDiskUsageDistributionGoal.class.getName());
-
-    List<OptimizationVerifier.Verification> verifications = Arrays.asList(NEW_BROKERS, BROKEN_BROKERS, REGRESSION);
-    List<OptimizationVerifier.Verification> kafkaAssignerVerifications =
-        Arrays.asList(GOAL_VIOLATION, BROKEN_BROKERS, REGRESSION);
-
     Properties props = KafkaCruiseControlUnitTestUtils.getKafkaCruiseControlProperties();
-    props.setProperty(AnalyzerConfig.MAX_REPLICAS_PER_BROKER_CONFIG, Long.toString(1500L));
-    String brokerSetsDataFile = Objects.requireNonNull(KafkaCruiseControlUnitTestUtils.class.getClassLoader().getResource(
-        TestConstants.BROKER_SET_RESOLVER_FILE_4)).getFile();
-    props.setProperty(AnalyzerConfig.BROKER_SET_CONFIG_FILE_CONFIG, brokerSetsDataFile);
-    props.setProperty(AnalyzerConfig.BROKER_SET_ASSIGNMENT_POLICY_CLASS_CONFIG, ModuloBasedBrokerSetAssignmentPolicy.class.getName());
+    props.setProperty(AnalyzerConfig.FAST_MODE_PER_BROKER_MOVE_TIMEOUT_MS_CONFIG, "1000000");
+    props.setProperty(AnalyzerConfig.MAX_REPLICAS_PER_BROKER_CONFIG, Long.toString(30000L));
 
     BalancingConstraint balancingConstraint = new BalancingConstraint(new KafkaCruiseControlConfig(props));
-    // balancingConstraint.setResourceBalancePercentage(TestConstants.LOW_BALANCE_PERCENTAGE);
-    // balancingConstraint.setCapacityThreshold(TestConstants.MEDIUM_CAPACITY_THRESHOLD);
-
-    // Test: Increase Replica Count
-    props.setProperty(AnalyzerConfig.MAX_REPLICAS_PER_BROKER_CONFIG, Long.toString(3000L));
-    balancingConstraint = new BalancingConstraint(new KafkaCruiseControlConfig(props));
-    // balancingConstraint.setResourceBalancePercentage(TestConstants.LOW_BALANCE_PERCENTAGE);
-    balancingConstraint.setResourceBalancePercentage(1.00001);
+    balancingConstraint.setResourceBalancePercentage(1.0001);
     balancingConstraint.setCapacityThreshold(TestConstants.MEDIUM_CAPACITY_THRESHOLD);
 
-    // ClusterModel clusterModel = RandomCluster.generate(clusterProperties);
-    // RandomCluster.populate(clusterModel, clusterProperties, TestConstants.Distribution.LINEAR);
-    ClusterModel clusterModel = createModel(BalancingProblemGenerator.generate(300, new Random(seed)));
-    Assertions.assertTrue(OptimizationVerifier.executeGoalsFor(balancingConstraint, clusterModel, goalNameByPriority, verifications), "Random Cluster Test failed to improve the existing state.");
+    var goals = goals(goalNameByPriority, balancingConstraint);
+    var goalOptimizer = new GoalOptimizer(new KafkaCruiseControlConfig(balancingConstraint.setProps(props)),
+        null,
+        new SystemTime(),
+        new MetricRegistry(),
+        EasyMock.mock(Executor.class),
+        EasyMock.mock(AdminClient.class));
+    var result = goalOptimizer.optimizations(clusterModel, goals, new OperationProgress());
 
-    var beforeNetOutSummary = OptimizationVerifier.result.brokerStatsBeforeOptimization()._brokerStats.stream()
-        .map(x -> x.getJsonStructure().get("NwOutRate"))
-        .mapToDouble(x -> (double) x)
-        .summaryStatistics();
-    var beforeNetInSummary = OptimizationVerifier.result.brokerStatsBeforeOptimization()._brokerStats.stream()
-        .mapToDouble(x ->
-            (double) x.getJsonStructure().get("LeaderNwInRate") +
-                (double) x.getJsonStructure().get("FollowerNwInRate"))
-        .summaryStatistics();
-    var netInSummary = OptimizationVerifier.result.brokerStatsAfterOptimization()._brokerStats.stream()
+    var netInBefore = result.brokerStatsBeforeOptimization()._brokerStats.stream()
         .mapToDouble(x ->
             (double) x.getJsonStructure().get("LeaderNwInRate") +
             (double) x.getJsonStructure().get("FollowerNwInRate"))
         .summaryStatistics();
-    var netOutSummary = OptimizationVerifier.result.brokerStatsAfterOptimization()._brokerStats.stream()
+    var netOutBefore = result.brokerStatsBeforeOptimization()._brokerStats.stream()
         .map(x -> x.getJsonStructure().get("NwOutRate"))
         .mapToDouble(x -> (double) x)
         .summaryStatistics();
+    var replicaBefore = result.brokerStatsBeforeOptimization()._brokerStats.stream()
+        .map(x -> x.getJsonStructure().get("Replicas"))
+        .mapToInt(x -> (int) x)
+        .summaryStatistics();
 
-    long bin = (long)(beforeNetInSummary.getMax() - beforeNetInSummary.getMin()) * 1000;
-    long bout = (long)(beforeNetOutSummary.getMax() - beforeNetOutSummary.getMin()) * 1000;
-    long in = (long)(netInSummary.getMax() - netInSummary.getMin()) * 1000;
-    long out = (long)(netOutSummary.getMax() - netOutSummary.getMin()) * 1000;
+    var netInAfter = result.brokerStatsAfterOptimization()._brokerStats.stream()
+        .mapToDouble(x ->
+            (double) x.getJsonStructure().get("LeaderNwInRate") +
+            (double) x.getJsonStructure().get("FollowerNwInRate"))
+        .summaryStatistics();
+    var netOutAfter = result.brokerStatsAfterOptimization()._brokerStats.stream()
+        .map(x -> x.getJsonStructure().get("NwOutRate"))
+        .mapToDouble(x -> (double) x)
+        .summaryStatistics();
+    var replicaAfter = result.brokerStatsAfterOptimization()._brokerStats.stream()
+        .map(x -> x.getJsonStructure().get("Replicas"))
+        .mapToInt(x -> (int) x)
+        .summaryStatistics();
 
-    System.out.println(bin + " " + bout);
-    System.out.println(in + " " + out);
+    long bin = (long)(netInBefore.getMax() - netInBefore.getMin()) * 1000;
+    long bout = (long)(netOutBefore.getMax() - netOutBefore.getMin()) * 1000;
+    long breplica = (long)(replicaBefore.getMax() - replicaBefore.getMin());
 
-    return clusterModel;
+    long in = (long)(netInAfter.getMax() - netInAfter.getMin()) * 1000;
+    long out = (long)(netOutAfter.getMax() - netOutAfter.getMin()) * 1000;
+    long replica = (long)(replicaAfter.getMax() - replicaAfter.getMin());
+
+    System.out.printf("%15d %15d %5d %n", (long) netInAfter.getSum() * 1000, (long) netOutAfter.getSum() * 1000, netInBefore.getCount());
+    System.out.printf("%15d %15d %5d %n", bin, bout, breplica);
+    System.out.printf("%15d %15d %5d %n", in, out, replica);
+    System.out.println("NetIn : " + NetworkInboundUsageDistributionGoal.acceptCount.sumThenReset() + "/" + NetworkInboundUsageDistributionGoal.rejectionCount.sumThenReset());
+    System.out.println("NetOut : " + NetworkOutboundUsageDistributionGoal.acceptCount.sumThenReset() + "/" + NetworkOutboundUsageDistributionGoal.rejectionCount.sumThenReset());
+  }
+
+  public static List<Goal> goals(List<String> goalClasses, BalancingConstraint constraint) {
+    return goalClasses.stream()
+        .map(className -> {
+          try {
+            Class<? extends Goal> goalClass = (Class<? extends Goal>) Class.forName(className);
+            try {
+              Constructor<? extends Goal> constructor = goalClass.getDeclaredConstructor(BalancingConstraint.class);
+              constructor.setAccessible(true);
+              return constructor.newInstance(constraint);
+            } catch (NoSuchMethodException badConstructor) {
+              //Try default constructor
+              return goalClass.newInstance();
+            }
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        })
+        .collect(Collectors.toList());
   }
 
   public static ClusterModel createModel(BalancingProblemGenerator.BalancingProblem statement) {
@@ -123,11 +138,19 @@ public class ThesisTest {
             Integer.toString(id),
             id,
             new BrokerCapacityInfo(Map.ofEntries(
-                Map.entry(Resource.CPU, 16.0),
-                Map.entry(Resource.DISK, 3e6),
-                Map.entry(Resource.NW_IN, 1e6),
-                Map.entry(Resource.NW_OUT, 1e6))),
+                Map.entry(Resource.CPU, 64.0),
+                Map.entry(Resource.DISK, 3e15),
+                Map.entry(Resource.NW_IN, 3e12),
+                Map.entry(Resource.NW_OUT, 3e12))),
             false));
+
+    cluster.createBroker("", "1000", 1000,
+        new BrokerCapacityInfo(Map.ofEntries(
+            Map.entry(Resource.CPU, 64.0),
+            Map.entry(Resource.DISK, 3e15),
+            Map.entry(Resource.NW_IN, 3e12),
+            Map.entry(Resource.NW_OUT, 3e12))),
+        false);
 
     // create topics
     statement.replicaPosition.forEach((tp, list) -> {
