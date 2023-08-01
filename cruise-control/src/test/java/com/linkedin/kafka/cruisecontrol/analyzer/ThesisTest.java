@@ -13,6 +13,7 @@ import com.linkedin.kafka.cruisecontrol.config.BrokerCapacityInfo;
 import com.linkedin.kafka.cruisecontrol.config.KafkaCruiseControlConfig;
 import com.linkedin.kafka.cruisecontrol.config.constants.AnalyzerConfig;
 import com.linkedin.kafka.cruisecontrol.executor.Executor;
+import com.linkedin.kafka.cruisecontrol.model.Broker;
 import com.linkedin.kafka.cruisecontrol.model.ClusterModel;
 import com.linkedin.kafka.cruisecontrol.monitor.ModelGeneration;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -41,12 +42,11 @@ public class ThesisTest {
     }
   }
 
-  private void rebalance(ClusterModel clusterModel) throws Exception {
+  static void rebalance(ClusterModel clusterModel) throws Exception {
     // Sorted by priority.
     List<String> goalNameByPriority = Arrays.asList(
         NetworkInboundUsageDistributionGoal.class.getName(),
-        NetworkOutboundUsageDistributionGoal.class.getName()
-    );
+        NetworkOutboundUsageDistributionGoal.class.getName());
 
     Properties props = KafkaCruiseControlUnitTestUtils.getKafkaCruiseControlProperties();
     props.setProperty(AnalyzerConfig.FAST_MODE_PER_BROKER_MOVE_TIMEOUT_MS_CONFIG, "1000000");
@@ -151,6 +151,7 @@ public class ThesisTest {
             Map.entry(Resource.NW_IN, 3e12),
             Map.entry(Resource.NW_OUT, 3e12))),
         false);
+    cluster.setBrokerState(1000, Broker.State.NEW);
 
     // create topics
     statement.replicaPosition.forEach((tp, list) -> {

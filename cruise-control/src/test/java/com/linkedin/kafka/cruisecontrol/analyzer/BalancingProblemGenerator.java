@@ -175,16 +175,16 @@ public class BalancingProblemGenerator {
       if(currentPartitionId > 0 && (currentPartitionId % brokerArray.length == 0))
         nextReplicaShift += 1;
       var firstReplicaIndex = (currentPartitionId + startIndex) % brokerArray.length;
-      var replicaBuffer = new ArrayList<>(List.of(firstReplicaIndex));
+      var replicaBuffer = new ArrayList<>(List.of(brokerArray[firstReplicaIndex]));
       for(int j = 0; j < replicationFactor - 1; j++) {
         replicaBuffer.add(brokerArray[replicaIndex(
             firstReplicaIndex,
             nextReplicaShift,
             j,
             brokerArray.length)]);
-        ret.put(currentPartitionId, replicaBuffer);
-        currentPartitionId += 1;
       }
+      ret.put(currentPartitionId, replicaBuffer);
+      currentPartitionId += 1;
     }
     return ret;
   }
